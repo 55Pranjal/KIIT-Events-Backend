@@ -1,0 +1,61 @@
+# --- Logs ---
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --- Dependency directories ---
+node_modules/
+
+# --- Build output ---
+dist/
+build/
+dist-ssr/
+coverage/
+*.local
+
+# --- Editor settings ---
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# --- Environment files ---
+.env       # backend environment variables
+.env.development*
+.env.test*
+.env.production*
+
+# --- Cache & Temporary files ---
+*.cache/
+.cache/
+.tmp/
+.temp/
+*.pid
+*.seed
+*.tgz
+
+# --- System files ---
+Thumbs.db
+ehthumbs.db
+
+# --- Optional lock files (if using one package manager consistently) ---
+# Uncomment one if you only use a single manager:
+# package-lock.json
+# yarn.lock
+# pnpm-lock.yaml
+
+
+
+# --- Uploads or runtime-generated files (if any) ---
+uploads/
+public/uploads/
+server/uploads/
