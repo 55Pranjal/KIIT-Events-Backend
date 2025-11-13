@@ -19,7 +19,15 @@ const app = express();
 
 // ====== Middleware ======
 app.use(express.json());
-app.use(cors());
+
+// ✅ Fix: Explicitly allow your frontend origin
+app.use(
+  cors({
+    origin: ["https://kiitevents.netlify.app"], // your Netlify frontend
+    methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
+    credentials: true,
+  })
+);
 
 // ====== Environment Variables ======
 const { JWT_SECRET, MONGO_URI, PORT = 5000 } = process.env;
@@ -30,6 +38,10 @@ if (!JWT_SECRET || !MONGO_URI) {
 }
 
 // ====== Routes ======
+app.get("/", (req, res) => {
+  res.send("Backend is running successfully ✅");
+});
+
 app.get("/api/protected", (req, res) => {
   const authHeader = req.headers.authorization;
   if (!authHeader) return res.status(401).json({ msg: "No token provided" });
@@ -42,8 +54,6 @@ app.get("/api/protected", (req, res) => {
     res.status(401).json({ msg: "Invalid or expired token" });
   }
 });
-
-console.info("[INFO] Importing routes...");
 
 app.use("/api/users", userRoutes);
 app.use("/api/events", eventRoutes);
@@ -64,5 +74,5 @@ mongoose
 
 // ====== Server ======
 app.listen(PORT, () => {
-  console.info(`[INFO] 🚀 Server is running on port ${PORT}`);
+  console.info(`[INFO] 🚀 Server running on port ${PORT}`);
 });
