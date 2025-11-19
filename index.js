@@ -23,7 +23,7 @@ app.use(express.json());
 // ✅ Fix: Explicitly allow your frontend origin
 app.use(
   cors({
-    origin: ["https://kiitevents.netlify.app"], // your Netlify frontend
+    origin: ["https://kiitevents.netlify.app", "http://localhost:5173"], // your Netlify frontend
     methods: ["GET", "POST", "PUT", "DELETE", "PATCH"],
     credentials: true,
   })

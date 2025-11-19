@@ -106,9 +106,29 @@ router.post("/add", verifyToken, async (req, res) => {
  */
 router.get("/", async (req, res) => {
   try {
+    const now = new Date();
+
+    // Get all events with society name
     const events = await Event.find().populate("societyId", "name").lean();
-    console.log(`📦 [EventRoute] Returned ${events.length} total events`);
-    res.json(events);
+
+    // Filter based on real date + time
+    const filteredEvents = events.filter((event) => {
+      const eventDateTime = new Date(`${event.date} ${event.time}`);
+      return eventDateTime > now;
+    });
+
+    // Sort the events by date+time
+    filteredEvents.sort((a, b) => {
+      const aDateTime = new Date(`${a.date} ${a.time}`);
+      const bDateTime = new Date(`${b.date} ${b.time}`);
+      return aDateTime - bDateTime;
+    });
+
+    console.log(
+      `📦 [EventRoute] Returned ${filteredEvents.length} filtered future events`
+    );
+
+    res.json(filteredEvents);
   } catch (err) {
     console.error("❌ [EventRoute] Error fetching all events:", err.message);
     res.status(500).json({ message: "Server error" });
@@ -122,16 +142,60 @@ router.get("/", async (req, res) => {
  */
 router.get("/upcoming", async (req, res) => {
   try {
-    const events = await Event.find({ registrationStatus: "upcoming" }).sort({
-      date: 1,
+    const now = new Date();
+
+    // Fetch all upcoming events by status
+    const events = await Event.find({ registrationStatus: "upcoming" });
+
+    // Filter events based on actual date + time
+    const upcomingEvents = events.filter((event) => {
+      const eventDateTime = new Date(`${event.date} ${event.time}`);
+      return eventDateTime > now;
     });
-    console.log(`📅 [EventRoute] Returned ${events.length} upcoming events`);
-    res.json(events);
-  } catch (err) {
-    console.error(
-      "❌ [EventRoute] Error fetching upcoming events:",
-      err.message
+
+    // Sort after filtering
+    upcomingEvents.sort((a, b) => {
+      const aDate = new Date(`${a.date} ${a.time}`);
+      const bDate = new Date(`${b.date} ${b.time}`);
+      return aDate - bDate;
+    });
+
+    console.log(
+      `📅 [EventRoute] Returned ${upcomingEvents.length} upcoming future events`
     );
+
+    res.json(upcomingEvents);
+  } catch (err) {
+    console.error("❌ [EventRoute] Error fetching upcoming events:", err);
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+router.get("/past", async (req, res) => {
+  try {
+    const now = new Date();
+
+    // Fetch all events (or only upcoming ones if you stored status)
+    const events = await Event.find().populate("societyId", "name").lean();
+
+    // Filter past events
+    const pastEvents = events.filter((event) => {
+      const eventDateTime = new Date(`${event.date} ${event.time}`);
+      return eventDateTime < now;
+    });
+
+    // Sort descending (most recent past event first)
+    pastEvents.sort((a, b) => {
+      const aDateTime = new Date(`${a.date} ${a.time}`);
+      const bDateTime = new Date(`${b.date} ${b.time}`);
+      return bDateTime - aDateTime;
+    });
+
+    console.log(`⏳ [EventRoute] Returned ${pastEvents.length} past events`);
+
+    res.json(pastEvents);
+  } catch (err) {
+    console.error("❌ [EventRoute] Error fetching past events:", err.message);
     res.status(500).json({ message: "Server error" });
   }
 });
