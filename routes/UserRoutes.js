@@ -118,26 +118,44 @@ router.post("/login", async (req, res) => {
 // =============================
 // 👤 Get Current User Info
 // =============================
-router.get("/me", async (req, res) => {
+// router.get("/me", async (req, res) => {
+//   try {
+//     console.info("[GET] /api/users/me - Fetching current user details");
+
+//     const authHeader = req.headers.authorization;
+//     if (!authHeader) {
+//       console.warn("[WARN] No token provided in /me route");
+//       return res.status(401).json({ error: "No token provided" });
+//     }
+
+//     const token = authHeader.split(" ")[1];
+//     const decoded = jwt.verify(token, process.env.JWT_SECRET);
+
+//     const user = await User.findById(decoded.id, { password: 0 });
+//     if (!user) {
+//       console.warn(`[WARN] User not found for ID: ${decoded.id}`);
+//       return res.status(404).json({ error: "User not found" });
+//     }
+
+//     console.info(`[INFO] User details fetched for: ${user.email}`);
+//     res.status(200).json(user);
+//   } catch (err) {
+//     console.error("[ERROR] Failed to fetch user:", err.message);
+//     res.status(500).json({ error: "Server error while fetching user" });
+//   }
+// });
+
+router.get("/me", verifyToken, async (req, res) => {
   try {
-    console.info("[GET] /api/users/me - Fetching current user details");
-
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      console.warn("[WARN] No token provided in /me route");
-      return res.status(401).json({ error: "No token provided" });
-    }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    const user = await User.findById(decoded.id, { password: 0 });
+    console.info(
+      "[GET] /api/users/me - Fetching current user details for",
+      req.user.id
+    );
+    const user = await User.findById(req.user.id).select("-password");
     if (!user) {
-      console.warn(`[WARN] User not found for ID: ${decoded.id}`);
+      console.warn(`[WARN] User not found for ID: ${req.user.id}`);
       return res.status(404).json({ error: "User not found" });
     }
-
-    console.info(`[INFO] User details fetched for: ${user.email}`);
     res.status(200).json(user);
   } catch (err) {
     console.error("[ERROR] Failed to fetch user:", err.message);
