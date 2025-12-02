@@ -3,6 +3,7 @@ import User from "../models/User.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import verifyToken from "../middleware/auth.js";
+import Society from "../models/Society.js";
 
 const router = express.Router();
 
@@ -183,6 +184,52 @@ router.put("/update", verifyToken, async (req, res) => {
   } catch (error) {
     console.error("[ERROR] Failed to update user:", error.message);
     res.status(500).json({ error: "Server error while updating user" });
+  }
+});
+
+/**
+ * GET /api/society-accounts
+ * Returns list of societies from Society collection
+ * Only societies with requestStatus === "approved"
+ */
+router.get("/", verifyToken, async (req, res) => {
+  try {
+    // Optional: allow only admins
+    // if (req.user.role !== "admin") {
+    //   return res.status(403).json({ message: "Forbidden" });
+    // }
+
+    const societies = await Society.find(
+      { requestStatus: "approved" }, // <-- filter here
+      { name: 1 } // return only name + _id
+    )
+      .sort({ name: 1 })
+      .lean();
+
+    return res.json(societies);
+  } catch (err) {
+    console.error("[SocietyAccounts] Error fetching societies:", err);
+    return res.status(500).json({ message: "Failed to fetch societies" });
+  }
+});
+
+/**
+ * Public list of societies (approved only)
+ * GET /api/society-accounts/public
+ */
+router.get("/public", async (req, res) => {
+  try {
+    const societies = await Society.find(
+      { requestStatus: "approved" },
+      { name: 1 }
+    )
+      .sort({ name: 1 })
+      .lean();
+
+    return res.json(societies);
+  } catch (err) {
+    console.error("[SocietyAccounts.public] Error fetching societies:", err);
+    return res.status(500).json({ message: "Failed to fetch societies" });
   }
 });
 

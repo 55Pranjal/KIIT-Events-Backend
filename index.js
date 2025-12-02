@@ -14,11 +14,15 @@ import adminRoutes from "./routes/AdminRoutes.js";
 import notificationRoutes from "./routes/NotificationRoutes.js";
 import announcementRoutes from "./routes/AnnouncementRoutes.js";
 import queryRoutes from "./routes/queryRoutes.js";
+import path from "path";
+import uploadRoutes from "./routes/UploadRoutes.js";
+import adminSocietyRoutes from "./routes/adminSocietyRoutes.js";
 
 const app = express();
 
 // ====== Middleware ======
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // ✅ Fix: Explicitly allow your frontend origin
 app.use(
@@ -55,6 +59,9 @@ app.get("/api/protected", (req, res) => {
   }
 });
 
+const uploadDir = path.join(process.cwd(), "uploads");
+app.use("/uploads", express.static(uploadDir));
+
 app.use("/api/users", userRoutes);
 app.use("/api/events", eventRoutes);
 app.use("/api/registers", registerRoutes);
@@ -63,6 +70,8 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/announcements", announcementRoutes);
 app.use("/api/queries", queryRoutes);
+app.use("/api/upload", uploadRoutes);
+app.use("/api/adminSociety", adminSocietyRoutes);
 
 // ====== Database Connection ======
 mongoose

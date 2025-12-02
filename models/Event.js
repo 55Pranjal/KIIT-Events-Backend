@@ -13,7 +13,7 @@ const eventSchema = new mongoose.Schema(
     eventCategory: { type: String, required: true },
     societyId: {
       type: mongoose.Schema.Types.ObjectId,
-      ref: "User",
+      ref: "Society",
       required: false,
     },
   },

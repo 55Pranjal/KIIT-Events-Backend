@@ -3,6 +3,7 @@ import Event from "../models/Event.js";
 import verifyToken from "../middleware/auth.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
+import Society from "../models/Society.js";
 // import { sendEmail } from "../utils/sendEmail.js";
 
 const router = express.Router();
@@ -12,8 +13,97 @@ const router = express.Router();
  * @desc    Admin adds a new event and sends notifications to all users
  * @access  Private (Admin only)
  */
+// router.post("/add", verifyToken, async (req, res) => {
+//   try {
+//     const {
+//       title,
+//       date,
+//       time,
+//       location,
+//       description,
+//       guest,
+//       registrationStatus,
+//       coverImageURL,
+//       eventCategory,
+//       societyId,
+//     } = req.body;
+
+//     console.log("📥 [EventRoute] Received new event creation request");
+
+//     if (req.user.role !== "admin") {
+//       console.warn(
+//         `⚠️ [EventRoute] Unauthorized attempt by user ${req.user.id}`
+//       );
+//       return res.status(403).json({ message: "Only admins can create events" });
+//     }
+
+//     if (!societyId) {
+//       console.warn(
+//         "⚠️ [EventRoute] Missing societyId in event creation request"
+//       );
+//       return res
+//         .status(400)
+//         .json({ message: "societyId is required to associate the event" });
+//     }
+
+//     const newEvent = new Event({
+//       title,
+//       date,
+//       time,
+//       location,
+//       description,
+//       guest,
+//       registrationStatus,
+//       coverImageURL,
+//       eventCategory,
+//       societyId,
+//     });
+
+//     await newEvent.save();
+//     console.log(
+//       `✅ [EventRoute] Event created successfully (ID: ${newEvent._id})`
+//     );
+
+//     const users = await User.find();
+//     console.log(`📋 [EventRoute] Found ${users.length} users to notify`);
+
+//     const notifications = users.map((user) => ({
+//       userId: user._id,
+//       message: `🎉 New event "${newEvent.title}" has been added!`,
+//       link: `/events/${newEvent._id}`,
+//     }));
+
+//     await Notification.insertMany(notifications);
+//     console.log("✅ [EventRoute] Notifications created for all users");
+
+//     // Uncomment if using email service later
+//     // const subject = "🎉 New Event Added!";
+//     // const text = `A new event "${newEvent.title}" has been added! Check it out on CollegeVents.`;
+//     // if (users.length > 0) {
+//     //   console.log(`📧 Sending emails to ${users.length} users...`);
+//     //   const emailPromises = users.map((user) =>
+//     //     sendEmail(user.email, subject, text).catch((err) =>
+//     //       console.error(`❌ Failed to send email to ${user.email}:`, err.message)
+//     //     )
+//     //   );
+//     //   await Promise.allSettled(emailPromises);
+//     //   console.log("✅ [EventRoute] Email notifications processed.");
+//     // }
+
+//     res.status(201).json({
+//       message: "Event saved successfully",
+//       event: newEvent,
+//     });
+//   } catch (err) {
+//     console.error("❌ [EventRoute] Error creating event:", err.message);
+//     res.status(500).json({ error: "Server error" });
+//   }
+// });
+
 router.post("/add", verifyToken, async (req, res) => {
   try {
+    console.info("[EventRoute] Received create request:", req.body);
+
     const {
       title,
       date,
@@ -27,24 +117,23 @@ router.post("/add", verifyToken, async (req, res) => {
       societyId,
     } = req.body;
 
-    console.log("📥 [EventRoute] Received new event creation request");
-
-    if (req.user.role !== "admin") {
-      console.warn(
-        `⚠️ [EventRoute] Unauthorized attempt by user ${req.user.id}`
-      );
-      return res.status(403).json({ message: "Only admins can create events" });
-    }
-
-    if (!societyId) {
-      console.warn(
-        "⚠️ [EventRoute] Missing societyId in event creation request"
-      );
+    // Basic validation
+    if (!title || !date || !societyId) {
       return res
         .status(400)
-        .json({ message: "societyId is required to associate the event" });
+        .json({ message: "title, date and societyId are required" });
     }
 
+    // Ensure society exists (optional but recommended)
+    const society = await Society.findById(societyId).select(
+      "_id name email phone"
+    );
+    if (!society) {
+      console.warn("[EventRoute] Provided societyId not found:", societyId);
+      return res.status(400).json({ message: "Provided societyId not found" });
+    }
+
+    // Build event explicitly (avoid relying on req.body spreading in case of whitelist)
     const newEvent = new Event({
       title,
       date,
@@ -55,47 +144,25 @@ router.post("/add", verifyToken, async (req, res) => {
       registrationStatus,
       coverImageURL,
       eventCategory,
-      societyId,
+      societyId, // <-- make sure this is actually set
     });
 
     await newEvent.save();
-    console.log(
-      `✅ [EventRoute] Event created successfully (ID: ${newEvent._id})`
-    );
 
-    const users = await User.find();
-    console.log(`📋 [EventRoute] Found ${users.length} users to notify`);
+    // Populate societyId for immediate client consumption
+    const populated = await Event.findById(newEvent._id)
+      .populate({ path: "societyId", select: "name email phone" })
+      .lean();
 
-    const notifications = users.map((user) => ({
-      userId: user._id,
-      message: `🎉 New event "${newEvent.title}" has been added!`,
-      link: `/events/${newEvent._id}`,
-    }));
-
-    await Notification.insertMany(notifications);
-    console.log("✅ [EventRoute] Notifications created for all users");
-
-    // Uncomment if using email service later
-    // const subject = "🎉 New Event Added!";
-    // const text = `A new event "${newEvent.title}" has been added! Check it out on CollegeVents.`;
-    // if (users.length > 0) {
-    //   console.log(`📧 Sending emails to ${users.length} users...`);
-    //   const emailPromises = users.map((user) =>
-    //     sendEmail(user.email, subject, text).catch((err) =>
-    //       console.error(`❌ Failed to send email to ${user.email}:`, err.message)
-    //     )
-    //   );
-    //   await Promise.allSettled(emailPromises);
-    //   console.log("✅ [EventRoute] Email notifications processed.");
-    // }
-
-    res.status(201).json({
-      message: "Event saved successfully",
-      event: newEvent,
-    });
+    console.info("[EventRoute] saved event:", newEvent._id);
+    return res
+      .status(201)
+      .json({ message: "Event saved successfully", event: populated });
   } catch (err) {
-    console.error("❌ [EventRoute] Error creating event:", err.message);
-    res.status(500).json({ error: "Server error" });
+    console.error("[EventRoute] Error creating event:", err);
+    return res
+      .status(500)
+      .json({ message: "Server error creating event", error: err.message });
   }
 });
 
