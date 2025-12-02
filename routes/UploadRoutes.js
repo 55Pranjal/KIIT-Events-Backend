@@ -44,7 +44,7 @@ router.post("/", upload.single("poster"), (req, res) => {
 
   // prefer a configured absolute base if you have one
   const BASE =
-    process.env.BACKEND_BASE_URL || `${req.protocol}://${req.get("host")}`;
+    process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`;
   const url = `${BASE}/uploads/${req.file.filename}`;
   console.info("[UploadRoute] Responding with url:", url);
   return res.json({ url });
