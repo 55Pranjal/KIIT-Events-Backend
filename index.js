@@ -23,6 +23,8 @@ const app = express();
 // ====== Middleware ======
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+const uploadDir = path.join(process.cwd(), "uploads");
+app.use("/uploads", express.static(uploadDir));
 
 // ✅ Fix: Explicitly allow your frontend origin
 app.use(
@@ -58,9 +60,6 @@ app.get("/api/protected", (req, res) => {
     res.status(401).json({ msg: "Invalid or expired token" });
   }
 });
-
-const uploadDir = path.join(process.cwd(), "uploads");
-app.use("/uploads", express.static(uploadDir));
 
 app.use("/api/users", userRoutes);
 app.use("/api/events", eventRoutes);

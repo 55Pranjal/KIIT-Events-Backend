@@ -29,7 +29,7 @@ coverage/
 *.sw?
 
 # --- Environment files ---
-.env       # backend environment variables
+.env       
 .env.development*
 .env.test*
 .env.production*
