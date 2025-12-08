@@ -1,54 +1,50 @@
-// routes/uploadRoutes.js
 import express from "express";
 import multer from "multer";
-import path from "path";
-import fs from "fs";
+import streamifier from "streamifier";
+import { v2 as cloudinary } from "cloudinary";
 
 const router = express.Router();
 
-// ensure uploads dir exists
-const UPLOAD_DIR = path.join(process.cwd(), "uploads");
-if (!fs.existsSync(UPLOAD_DIR)) fs.mkdirSync(UPLOAD_DIR, { recursive: true });
+// use memory storage, not disk
+const upload = multer({ storage: multer.memoryStorage() });
 
-// Multer storage config
-const storage = multer.diskStorage({
-  destination: (req, file, cb) => cb(null, UPLOAD_DIR),
-  filename: (req, file, cb) => {
-    const ext = path.extname(file.originalname).toLowerCase();
-    const name = `${Date.now()}-${Math.round(Math.random() * 1e9)}${ext}`;
-    cb(null, name);
-  },
+// configure cloudinary
+cloudinary.config({
+  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
+  api_key: process.env.CLOUDINARY_API_KEY,
+  api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// validate file type + limits
-const upload = multer({
-  storage,
-  limits: { fileSize: 8 * 1024 * 1024 }, // 8 MB limit — change as needed
-  fileFilter: (req, file, cb) => {
-    const allowedMime = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
-    if (allowedMime.includes(file.mimetype)) cb(null, true);
-    else cb(new Error("Only image files (jpg, png, webp) are allowed"));
-  },
+// Upload route
+router.post("/", upload.single("poster"), async (req, res) => {
+  try {
+    if (!req.file) return res.status(400).json({ error: "No file uploaded" });
+
+    // upload to cloudinary using a stream
+    const streamUpload = () => {
+      return new Promise((resolve, reject) => {
+        const stream = cloudinary.uploader.upload_stream(
+          {
+            folder: "event_posters",
+            resource_type: "image",
+          },
+          (error, result) => {
+            if (result) resolve(result);
+            else reject(error);
+          }
+        );
+        streamifier.createReadStream(req.file.buffer).pipe(stream);
+      });
+    };
+
+    const result = await streamUpload();
+
+    // return the secure URL
+    return res.json({ url: result.secure_url });
+  } catch (err) {
+    console.error("Cloudinary Upload Error:", err);
+    res.status(500).json({ error: "Image upload failed" });
+  }
 });
 
-router.post("/", upload.single("poster"), (req, res) => {
-  console.info(
-    "[UploadRoute] Received upload. file:",
-    req.file && {
-      filename: req.file.filename,
-      mimetype: req.file.mimetype,
-      size: req.file.size,
-    }
-  );
-  if (!req.file) return res.status(400).json({ error: "No file uploaded" });
-
-  // prefer a configured absolute base if you have one
-  const BASE =
-    process.env.BACKEND_URL || `${req.protocol}://${req.get("host")}`;
-  const url = `${BASE}/uploads/${req.file.filename}`;
-  console.info("[UploadRoute] Responding with url:", url);
-  return res.json({ url });
-});
-
-// optional: endpoint to delete files (admin use) - not required but useful
 export default router;
