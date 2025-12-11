@@ -104,6 +104,7 @@ import queryRoutes from "./routes/queryRoutes.js";
 import path from "path";
 import uploadRoutes from "./routes/UploadRoutes.js";
 import adminSocietyRoutes from "./routes/adminSocietyRoutes.js";
+import HighlightRoutes from "./routes/HighlightRoute.js";
 
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
@@ -170,6 +171,7 @@ app.use("/api/announcements", announcementRoutes);
 app.use("/api/queries", queryRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/adminSociety", adminSocietyRoutes);
+app.use("/api", HighlightRoutes);
 
 // ====== Database Connection ======
 mongoose
