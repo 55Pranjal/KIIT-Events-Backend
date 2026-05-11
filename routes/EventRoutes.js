@@ -100,9 +100,23 @@ const router = express.Router();
 //   }
 // });
 
+/**
+ * Resolve the Society._id that a given user is allowed to act on.
+ * - admin: any society they pass in (caller checks)
+ * - society: the approved Society doc where they are president
+ * Returns null if the society user has no approved society on file.
+ */
+const resolveOwnedSocietyId = async (userId) => {
+  const society = await Society.findOne({
+    president: userId,
+    requestStatus: "approved",
+  }).select("_id");
+  return society ? society._id : null;
+};
+
 router.post("/add", verifyToken, async (req, res) => {
   try {
-    console.info("[EventRoute] Received create request:", req.body);
+    console.info("[EventRoute] Received create request from", req.user.id, "role:", req.user.role);
 
     const {
       title,
@@ -114,17 +128,48 @@ router.post("/add", verifyToken, async (req, res) => {
       registrationStatus,
       coverImageURL,
       eventCategory,
-      societyId,
     } = req.body;
 
-    // Basic validation
-    if (!title || !date || !societyId) {
+    // Role gate: only admins and approved societies can create events
+    if (req.user.role !== "admin" && req.user.role !== "society") {
+      console.warn(
+        `[EventRoute] Unauthorized create attempt by ${req.user.role} ${req.user.id}`
+      );
       return res
-        .status(400)
-        .json({ message: "title, date and societyId are required" });
+        .status(403)
+        .json({ message: "Only admins and approved societies can create events" });
     }
 
-    // Ensure society exists (optional but recommended)
+    // Decide which Society._id this event belongs to.
+    // Society users can only create for their own society — ignore any client-supplied societyId.
+    // Admins must pass societyId in the body.
+    let societyId;
+    if (req.user.role === "society") {
+      societyId = await resolveOwnedSocietyId(req.user.id);
+      if (!societyId) {
+        console.warn(
+          `[EventRoute] Society user ${req.user.id} has no approved society`
+        );
+        return res
+          .status(403)
+          .json({ message: "No approved society found for this account" });
+      }
+    } else {
+      societyId = req.body.societyId;
+      if (!societyId) {
+        return res
+          .status(400)
+          .json({ message: "societyId is required" });
+      }
+    }
+
+    // Basic validation
+    if (!title || !date) {
+      return res
+        .status(400)
+        .json({ message: "title and date are required" });
+    }
+
     const society = await Society.findById(societyId).select(
       "_id name email phone"
     );
@@ -144,7 +189,7 @@ router.post("/add", verifyToken, async (req, res) => {
       registrationStatus,
       coverImageURL,
       eventCategory,
-      societyId, // <-- make sure this is actually set
+      societyId,
     });
 
     await newEvent.save();
@@ -312,14 +357,21 @@ router.delete("/:id", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Event not found" });
     }
 
-    if (
-      req.user.role !== "admin" &&
-      (!event.societyId || event.societyId.toString() !== req.user.id)
-    ) {
-      console.warn(
-        `🚫 [EventRoute] Unauthorized delete attempt by user ${req.user.id}`
-      );
-      return res.status(403).json({ message: "Unauthorized" });
+    if (req.user.role !== "admin") {
+      if (req.user.role !== "society") {
+        return res.status(403).json({ message: "Unauthorized" });
+      }
+      const ownedSocietyId = await resolveOwnedSocietyId(req.user.id);
+      if (
+        !ownedSocietyId ||
+        !event.societyId ||
+        event.societyId.toString() !== ownedSocietyId.toString()
+      ) {
+        console.warn(
+          `🚫 [EventRoute] Unauthorized delete attempt by user ${req.user.id}`
+        );
+        return res.status(403).json({ message: "Unauthorized" });
+      }
     }
 
     await Event.findByIdAndDelete(req.params.id);
@@ -347,13 +399,21 @@ router.put("/:eventId", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Event not found" });
     }
 
-    if (
-      req.user.role === "society" &&
-      (!event.societyId || event.societyId.toString() !== req.user.id)
-    ) {
-      console.warn(
-        `🚫 [EventRoute] Unauthorized update attempt by user ${req.user.id}`
-      );
+    if (req.user.role === "society") {
+      const ownedSocietyId = await resolveOwnedSocietyId(req.user.id);
+      if (
+        !ownedSocietyId ||
+        !event.societyId ||
+        event.societyId.toString() !== ownedSocietyId.toString()
+      ) {
+        console.warn(
+          `🚫 [EventRoute] Unauthorized update attempt by user ${req.user.id}`
+        );
+        return res
+          .status(403)
+          .json({ message: "You are not allowed to edit this event" });
+      }
+    } else if (req.user.role !== "admin") {
       return res
         .status(403)
         .json({ message: "You are not allowed to edit this event" });

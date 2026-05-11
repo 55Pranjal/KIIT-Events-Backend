@@ -1,39 +1,25 @@
 import express from "express";
 import Society from "../models/Society.js";
-import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
+import verifyToken from "../middleware/auth.js";
 // import { sendEmail } from "../utils/sendEmail.js";
 
 const router = express.Router();
 
-// ✅ Middleware: Verify admin using token
-const verifyAdmin = async (req, res, next) => {
-  try {
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      console.warn("[WARN] Missing authorization header");
-      return res.status(401).json({ error: "No token provided" });
-    }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-    const user = await User.findById(decoded.id);
-    if (!user || user.role !== "admin") {
-      console.warn(
-        `[WARN] Unauthorized access attempt by user ID: ${decoded.id}`
-      );
-      return res.status(403).json({ error: "Access denied" });
-    }
-
-    req.user = user;
-    next();
-  } catch (err) {
-    console.error("[ERROR] Token verification failed:", err.message);
-    res.status(500).json({ error: "Server error" });
+// Admin gate: relies on shared verifyToken (which sets req.user from the JWT)
+// and only adds the role check on top.
+const requireAdmin = (req, res, next) => {
+  if (!req.user || req.user.role !== "admin") {
+    console.warn(
+      `[WARN] Unauthorized admin access attempt by user ID: ${req.user?.id}`
+    );
+    return res.status(403).json({ error: "Access denied" });
   }
+  next();
 };
+
+const verifyAdmin = [verifyToken, requireAdmin];
 
 // ✅ GET: Fetch all pending society requests
 router.get("/society-requests", verifyAdmin, async (req, res) => {

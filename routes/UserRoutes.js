@@ -4,6 +4,11 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { OAuth2Client } from "google-auth-library";
 import verifyToken from "../middleware/auth.js";
+import {
+  strictAuthLimiter,
+  oauthLimiter,
+  mutationLimiter,
+} from "../middleware/rateLimiters.js";
 import Society from "../models/Society.js";
 
 const router = express.Router();
@@ -39,7 +44,7 @@ const signSessionToken = (user) =>
 // =============================
 // 🔐 Google OAuth Sign-in / Sign-up
 // =============================
-router.post("/google", async (req, res) => {
+router.post("/google", oauthLimiter, async (req, res) => {
   try {
     const { credential } = req.body;
     if (!credential) {
@@ -109,7 +114,7 @@ router.post("/google", async (req, res) => {
 // =============================
 // 🔓 Legacy Password Login (kept for pre-OAuth users)
 // =============================
-router.post("/login", async (req, res) => {
+router.post("/login", strictAuthLimiter, async (req, res) => {
   try {
     console.info("[POST] /api/users/login - Login attempt");
 
@@ -167,7 +172,7 @@ router.get("/me", verifyToken, async (req, res) => {
 // =============================
 // ✏️ Update User Info
 // =============================
-router.put("/update", verifyToken, async (req, res) => {
+router.put("/update", mutationLimiter, verifyToken, async (req, res) => {
   try {
     console.info(`[PUT] /api/users/update - Updating user ${req.user.id}`);
 

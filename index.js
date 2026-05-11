@@ -105,12 +105,18 @@ import path from "path";
 import uploadRoutes from "./routes/UploadRoutes.js";
 import adminSocietyRoutes from "./routes/adminSocietyRoutes.js";
 import HighlightRoutes from "./routes/HighlightRoute.js";
+import { globalApiLimiter } from "./middleware/rateLimiters.js";
 
 import { fileURLToPath } from "url";
 import { dirname, resolve } from "path";
 import fs from "fs";
 
 const app = express();
+
+// Required when running behind a reverse proxy (Render, Heroku, Fly, etc.)
+// so req.ip reflects the real client IP from X-Forwarded-For. Without this,
+// every user shares the proxy's IP and rate limits become global.
+app.set("trust proxy", 1);
 
 // ====== Middleware ======
 app.use(express.json());
@@ -142,6 +148,10 @@ if (!JWT_SECRET || !MONGO_URI) {
   console.error("[ERROR] Missing environment variables. Check your .env file.");
   process.exit(1);
 }
+
+// Apply a soft global rate limit to all /api/* routes as defense-in-depth.
+// Specific routes layer tighter limits on top of this.
+app.use("/api", globalApiLimiter);
 
 // ====== Routes ======
 app.get("/", (req, res) => {
