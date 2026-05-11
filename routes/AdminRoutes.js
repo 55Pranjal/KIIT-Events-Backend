@@ -159,4 +159,78 @@ router.post("/society-requests/:id/decision", verifyAdmin, async (req, res) => {
   }
 });
 
+// ✅ POST: Revoke an approved society — admin downgrades the president back
+// to a regular student account. Existing events stay (admin can delete them
+// individually); the (former) president loses the ability to create new ones.
+router.post("/societies/:id/revoke", verifyAdmin, async (req, res) => {
+  try {
+    const society = await Society.findById(req.params.id).populate("president");
+    if (!society) {
+      return res.status(404).json({ error: "Society not found" });
+    }
+    if (society.requestStatus !== "approved") {
+      return res
+        .status(400)
+        .json({ error: "Only approved societies can be revoked" });
+    }
+
+    const president = society.president;
+    if (!president) {
+      return res
+        .status(500)
+        .json({ error: "Society is missing a linked president user" });
+    }
+
+    const prevSocietyStatus = society.requestStatus;
+    const prevUserRole = president.role;
+    const prevUserStatus = president.societyRequestStatus;
+
+    society.requestStatus = "rejected";
+    await society.save();
+
+    try {
+      president.role = "student";
+      president.societyRequestStatus = "rejected";
+      await president.save();
+    } catch (userSaveErr) {
+      console.error(
+        "[ERROR] Failed to downgrade president — reverting society:",
+        userSaveErr.message
+      );
+      society.requestStatus = prevSocietyStatus;
+      try {
+        await society.save();
+      } catch (revertErr) {
+        console.error(
+          "[FATAL] Society revert failed during revoke — manual reconciliation needed:",
+          revertErr.message,
+          { societyId: society._id }
+        );
+      }
+      return res.status(500).json({ error: "Failed to revoke society" });
+    }
+
+    try {
+      await Notification.create({
+        userId: president._id,
+        message: `Your society "${society.name}" access has been revoked by an admin.`,
+        isRead: false,
+      });
+    } catch (notifyErr) {
+      console.error(
+        "[WARN] Failed to create revoke notification:",
+        notifyErr.message
+      );
+    }
+
+    console.log(
+      `[INFO] Society "${society.name}" revoked by admin ${req.user.id} (was role=${prevUserRole}, status=${prevUserStatus})`
+    );
+    res.status(200).json({ message: "Society revoked successfully." });
+  } catch (err) {
+    console.error("[ERROR] Society revoke failed:", err.message);
+    res.status(500).json({ error: "Server error" });
+  }
+});
+
 export default router;

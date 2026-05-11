@@ -92,6 +92,7 @@ router.post("/:eventId", mutationLimiter, verifyToken, async (req, res) => {
     const notification = new Notification({
       userId,
       message: `You have successfully registered for "${event.title}".`,
+      link: `/events/${eventId}`,
       isRead: false,
     });
     await notification.save();

@@ -1,88 +1,113 @@
-// import express from "express";
-// import Announcement from "../models/Announcement.js";
-// import verifyToken from "../middleware/auth.js";
-// import User from "../models/User.js";
-
-// const router = express.Router();
-
-// // POST: Create an announcement
-// router.post("/", verifyToken, async (req, res) => {
-//   try {
-//     console.log("[POST] /api/announcements — Request received");
-
-//     const { title, message, societyId } = req.body;
-
-//     if (req.user.role !== "admin") {
-//       console.warn(
-//         "[WARN] Unauthorized attempt to create announcement by:",
-//         req.user.email
-//       );
-//       return res
-//         .status(403)
-//         .json({ message: "Only admins can create announcements" });
-//     }
-
-//     if (!societyId) {
-//       console.warn("[WARN] Missing societyId in request body");
-//       return res
-//         .status(400)
-//         .json({ message: "societyId is required to post announcement" });
-//     }
-
-//     const society = await User.findById(societyId);
-//     if (!society || society.role !== "society") {
-//       console.warn(`[WARN] Invalid or missing society: ${societyId}`);
-//       return res.status(404).json({ message: "Society not found" });
-//     }
-
-//     const newAnnouncement = new Announcement({
-//       title,
-//       message,
-//       authorId: society._id,
-//       authorRole: "society",
-//     });
-
-//     await newAnnouncement.save();
-//     console.log(
-//       `[INFO] Announcement created successfully — ID: ${newAnnouncement._id}`
-//     );
-
-//     res.status(201).json({
-//       message: "Announcement created successfully",
-//       announcement: newAnnouncement,
-//     });
-//   } catch (err) {
-//     console.error("[ERROR] Failed to create announcement:", err.message);
-//     res.status(500).json({ error: "Server error" });
-//   }
-// });
-
-// // GET: Fetch all announcements
-// router.get("/", async (req, res) => {
-//   try {
-//     console.log("[GET] /api/announcements — Fetching all announcements");
-//     const announcements = await Announcement.find()
-//       .sort({ createdAt: -1 })
-//       .populate("authorId", "name email");
-
-//     console.log(`[INFO] Retrieved ${announcements.length} announcements`);
-//     res.json(announcements);
-//   } catch (err) {
-//     console.error("[ERROR] Failed to fetch announcements:", err.message);
-//     res.status(500).json({ error: "Server error" });
-//   }
-// });
-
-// export default router;
-
-// routes/AnnouncementRoutes.js (replace existing file / handlers)
 import express from "express";
 import Announcement from "../models/Announcement.js";
 import verifyToken from "../middleware/auth.js";
 import User from "../models/User.js";
 import Society from "../models/Society.js"; // <--- new import (adjust path if needed)
+import Notification from "../models/Notification.js";
+import { mutationLimiter } from "../middleware/rateLimiters.js";
 
 const router = express.Router();
+
+// POST: Create an announcement (admin or approved society)
+router.post("/", mutationLimiter, verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== "admin" && req.user.role !== "society") {
+      return res
+        .status(403)
+        .json({ message: "Only admins and approved societies can post announcements" });
+    }
+
+    const title = (req.body.title || "").trim();
+    const message = (req.body.message || "").trim();
+    if (!title || !message) {
+      return res
+        .status(400)
+        .json({ message: "title and message are required" });
+    }
+
+    // Resolve which Society this post is attributed to.
+    // - society users: their own approved Society (ignore client societyId)
+    // - admins: must pick a Society via the dropdown
+    let societyId;
+    if (req.user.role === "society") {
+      const society = await Society.findOne({
+        president: req.user.id,
+        requestStatus: "approved",
+      }).select("_id");
+      if (!society) {
+        return res
+          .status(403)
+          .json({ message: "No approved society found for this account" });
+      }
+      societyId = society._id;
+    } else {
+      societyId = req.body.societyId;
+      if (!societyId) {
+        return res
+          .status(400)
+          .json({ message: "societyId is required" });
+      }
+      const society = await Society.findById(societyId).select("_id");
+      if (!society) {
+        return res
+          .status(400)
+          .json({ message: "Provided societyId not found" });
+      }
+    }
+
+    // We store Society._id in authorId — the GET handler resolves it from
+    // either the User or Society collection, so this stays consistent.
+    const announcement = await Announcement.create({
+      title,
+      message,
+      authorId: societyId,
+      authorRole: "society",
+    });
+
+    // Resolve the society's display name for the notification body.
+    const societyDoc = await Society.findById(societyId).select("name").lean();
+    const societyName = societyDoc?.name || "A society";
+
+    // Fan out notifications to every student (broadcast). Best-effort: a
+    // notification failure shouldn't fail the announcement create. We exclude
+    // the author themselves so a society poster doesn't get pinged about
+    // their own post.
+    try {
+      const recipients = await User.find({
+        role: "student",
+        _id: { $ne: req.user.id },
+      })
+        .select("_id")
+        .lean();
+
+      if (recipients.length > 0) {
+        const notifMessage = `${societyName} posted: "${title}"`;
+        const notifications = recipients.map((u) => ({
+          userId: u._id,
+          message: notifMessage,
+          link: `/AnnouncementsList`,
+        }));
+        await Notification.insertMany(notifications);
+        console.info(
+          `[INFO] Fanned out announcement ${announcement._id} to ${recipients.length} students`
+        );
+      }
+    } catch (notifyErr) {
+      console.error(
+        "[WARN] Failed to fan out announcement notifications:",
+        notifyErr.message
+      );
+    }
+
+    console.info(
+      `[INFO] Announcement ${announcement._id} created by ${req.user.role} ${req.user.id} for society ${societyId}`
+    );
+    res.status(201).json(announcement);
+  } catch (err) {
+    console.error("[ERROR] Failed to create announcement:", err.message);
+    res.status(500).json({ message: "Server error while creating announcement" });
+  }
+});
 
 // POST: Create an announcement
 router.get("/", async (req, res) => {

@@ -11,12 +11,21 @@ const router = express.Router();
  */
 router.get("/", verifyToken, async (req, res) => {
   try {
+    // Pagination: ?limit=20&skip=40. Defaults match the previous hardcoded
+    // behaviour (limit 50, skip 0). Clamped to keep payloads bounded.
+    const limit = Math.min(
+      Math.max(parseInt(req.query.limit, 10) || 50, 1),
+      100
+    );
+    const skip = Math.max(parseInt(req.query.skip, 10) || 0, 0);
+
     const notifications = await Notification.find({ userId: req.user.id })
       .sort({ createdAt: -1 })
-      .limit(50);
+      .skip(skip)
+      .limit(limit);
 
     console.log(
-      `📨 [NotificationRoute] Fetched ${notifications.length} notifications for user ${req.user.id}`
+      `📨 [NotificationRoute] Fetched ${notifications.length} notifications for user ${req.user.id} (skip=${skip}, limit=${limit})`
     );
     res.json(notifications);
   } catch (err) {
