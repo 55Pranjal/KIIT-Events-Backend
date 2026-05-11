@@ -4,6 +4,8 @@ import verifyToken from "../middleware/auth.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
 import Society from "../models/Society.js";
+import Register from "../models/Register.js";
+import Highlight from "../models/Highlight.js";
 // import { sendEmail } from "../utils/sendEmail.js";
 
 const router = express.Router();
@@ -114,6 +116,35 @@ const resolveOwnedSocietyId = async (userId) => {
   return society ? society._id : null;
 };
 
+/**
+ * Validate an event date/time against the same window the UI enforces:
+ * parseable, in the future, and no more than 2 months out.
+ * Returns { ok: true } or { ok: false, message }.
+ */
+const validateEventDateTime = (date, time) => {
+  if (!date) return { ok: false, message: "date is required" };
+
+  const start = new Date(`${date}T${time || "00:00"}`);
+  if (isNaN(start.getTime())) {
+    return { ok: false, message: "Invalid date/time format" };
+  }
+
+  if (start.getTime() <= Date.now()) {
+    return { ok: false, message: "Event date/time must be in the future" };
+  }
+
+  const twoMonthsOut = new Date();
+  twoMonthsOut.setMonth(twoMonthsOut.getMonth() + 2);
+  if (start.getTime() > twoMonthsOut.getTime()) {
+    return {
+      ok: false,
+      message: "Event date must be within the next 2 months",
+    };
+  }
+
+  return { ok: true };
+};
+
 router.post("/add", verifyToken, async (req, res) => {
   try {
     console.info("[EventRoute] Received create request from", req.user.id, "role:", req.user.role);
@@ -168,6 +199,11 @@ router.post("/add", verifyToken, async (req, res) => {
       return res
         .status(400)
         .json({ message: "title and date are required" });
+    }
+
+    const dateCheck = validateEventDateTime(date, time);
+    if (!dateCheck.ok) {
+      return res.status(400).json({ message: dateCheck.message });
     }
 
     const society = await Society.findById(societyId).select(
@@ -374,8 +410,39 @@ router.delete("/:id", verifyToken, async (req, res) => {
       }
     }
 
-    await Event.findByIdAndDelete(req.params.id);
-    console.log(`🗑️ [EventRoute] Event ${req.params.id} deleted successfully`);
+    // Collect registered users so we can notify them after deletion.
+    const registrations = await Register.find({ eventId: req.params.id })
+      .select("userId")
+      .lean();
+
+    // Cascade: remove dependent rows so we don't leave orphaned registrations
+    // or highlights pointing at a non-existent event.
+    await Promise.all([
+      Register.deleteMany({ eventId: req.params.id }),
+      Highlight.deleteMany({ eventId: req.params.id }),
+      Event.findByIdAndDelete(req.params.id),
+    ]);
+
+    if (registrations.length > 0) {
+      const message = `The event "${event.title}" has been cancelled.`;
+      const notifications = registrations.map((r) => ({
+        userId: r.userId,
+        message,
+      }));
+      // Best-effort — don't fail the delete if notifications can't be created.
+      try {
+        await Notification.insertMany(notifications);
+      } catch (notifyErr) {
+        console.error(
+          "[EventRoute] Failed to notify registered users on delete:",
+          notifyErr.message
+        );
+      }
+    }
+
+    console.log(
+      `🗑️ [EventRoute] Event ${req.params.id} deleted (notified ${registrations.length} users, cleaned dependents)`
+    );
     res.json({ message: "Event deleted successfully" });
   } catch (err) {
     console.error("❌ [EventRoute] Error deleting event:", err.message);
@@ -419,6 +486,16 @@ router.put("/:eventId", verifyToken, async (req, res) => {
         .json({ message: "You are not allowed to edit this event" });
     }
 
+    // If date or time is being changed, validate the new combination.
+    if (updates.date !== undefined || updates.time !== undefined) {
+      const newDate = updates.date !== undefined ? updates.date : event.date;
+      const newTime = updates.time !== undefined ? updates.time : event.time;
+      const dateCheck = validateEventDateTime(newDate, newTime);
+      if (!dateCheck.ok) {
+        return res.status(400).json({ message: dateCheck.message });
+      }
+    }
+
     const allowedFields = [
       "title",
       "date",
@@ -431,11 +508,42 @@ router.put("/:eventId", verifyToken, async (req, res) => {
       "eventCategory",
     ];
 
+    // Track which user-visible fields actually changed so we can decide whether
+    // to notify registered students. Cosmetic edits (description, image, guest)
+    // don't warrant a notification.
+    const notifiableFields = ["title", "date", "time", "location"];
+    const changedNotifiable = [];
     allowedFields.forEach((field) => {
-      if (updates[field] !== undefined) event[field] = updates[field];
+      if (updates[field] === undefined) return;
+      if (notifiableFields.includes(field) && event[field] !== updates[field]) {
+        changedNotifiable.push(field);
+      }
+      event[field] = updates[field];
     });
 
     await event.save();
+
+    if (changedNotifiable.length > 0) {
+      const registrations = await Register.find({ eventId })
+        .select("userId")
+        .lean();
+      if (registrations.length > 0) {
+        const message = `The event "${event.title}" was updated (${changedNotifiable.join(", ")}). Check the latest details.`;
+        const notifications = registrations.map((r) => ({
+          userId: r.userId,
+          message,
+          link: `/events/${eventId}`,
+        }));
+        try {
+          await Notification.insertMany(notifications);
+        } catch (notifyErr) {
+          console.error(
+            "[EventRoute] Failed to notify registered users on update:",
+            notifyErr.message
+          );
+        }
+      }
+    }
     console.log(`🛠️ [EventRoute] Event ${eventId} updated successfully`);
     res.json({ message: "Event updated successfully", event });
   } catch (err) {

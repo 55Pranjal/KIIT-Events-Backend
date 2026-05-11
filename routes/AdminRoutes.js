@@ -48,35 +48,83 @@ router.post("/society-requests/:id/decision", verifyAdmin, async (req, res) => {
       `[POST] /api/admin/society-requests/${req.params.id}/decision — Decision: ${decision}`
     );
 
+    if (decision !== "approved" && decision !== "rejected") {
+      return res
+        .status(400)
+        .json({ error: "decision must be 'approved' or 'rejected'" });
+    }
+
     const society = await Society.findById(req.params.id).populate("president");
     if (!society) {
       console.warn(`[WARN] Society not found for ID: ${req.params.id}`);
       return res.status(404).json({ error: "Society not found" });
     }
 
+    const president = society.president;
+    if (!president) {
+      console.warn(
+        `[WARN] Society ${society._id} has no president user — cannot apply decision`
+      );
+      return res
+        .status(500)
+        .json({ error: "Society is missing a linked president user" });
+    }
+
+    // Snapshot the prior values so we can revert if the second write fails.
+    // MongoDB transactions would be cleaner but require a replica set; this
+    // manual revert keeps both documents consistent on standalone deployments.
+    const prevSocietyStatus = society.requestStatus;
+    const prevUserRole = president.role;
+    const prevUserStatus = president.societyRequestStatus;
+
     society.requestStatus = decision;
     await society.save();
 
-    const president = society.president;
-    if (decision === "approved") {
-      president.role = "society";
-      president.societyRequestStatus = "approved";
-    } else {
-      president.societyRequestStatus = "rejected";
+    try {
+      if (decision === "approved") {
+        president.role = "society";
+        president.societyRequestStatus = "approved";
+      } else {
+        president.societyRequestStatus = "rejected";
+      }
+      await president.save();
+    } catch (userSaveErr) {
+      console.error(
+        "[ERROR] Failed to update president after society save — reverting society:",
+        userSaveErr.message
+      );
+      society.requestStatus = prevSocietyStatus;
+      try {
+        await society.save();
+      } catch (revertErr) {
+        console.error(
+          "[FATAL] Society revert failed — manual reconciliation needed:",
+          revertErr.message,
+          { societyId: society._id, decision, prevSocietyStatus }
+        );
+      }
+      return res.status(500).json({ error: "Failed to apply decision" });
     }
-    await president.save();
 
     const message =
       decision === "approved"
         ? `Your society request for "${society.name}" has been approved.`
         : `Your society request for "${society.name}" has been rejected.`;
 
-    const notification = new Notification({
-      userId: president._id,
-      message,
-      isRead: false,
-    });
-    await notification.save();
+    // Notification is best-effort; the role change is what matters for the user.
+    let notification = null;
+    try {
+      notification = await Notification.create({
+        userId: president._id,
+        message,
+        isRead: false,
+      });
+    } catch (notifyErr) {
+      console.error(
+        "[WARN] Failed to create notification for society decision:",
+        notifyErr.message
+      );
+    }
 
     console.log(`[INFO] Society request ${decision} for: ${society.name}`);
 
