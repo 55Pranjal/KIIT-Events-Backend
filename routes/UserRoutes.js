@@ -2,84 +2,122 @@ import express from "express";
 import User from "../models/User.js";
 import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
+import { OAuth2Client } from "google-auth-library";
 import verifyToken from "../middleware/auth.js";
 import Society from "../models/Society.js";
 
 const router = express.Router();
 
-// =============================
-// 🔐 Register User
-// =============================
-router.post("/add", async (req, res) => {
-  const JWT_SECRET = process.env.JWT_SECRET;
+const GOOGLE_CLIENT_ID = process.env.GOOGLE_CLIENT_ID;
+const ALLOWED_EMAIL_DOMAIN = process.env.ALLOWED_EMAIL_DOMAIN || "kiit.ac.in";
+const ADMIN_EMAIL_WHITELIST = (process.env.ADMIN_EMAIL_WHITELIST || "")
+  .split(",")
+  .map((e) => e.trim().toLowerCase())
+  .filter(Boolean);
 
+if (!GOOGLE_CLIENT_ID) {
+  console.warn(
+    "[WARN] GOOGLE_CLIENT_ID is not set. /api/users/google will reject all requests."
+  );
+}
+
+const googleClient = new OAuth2Client(GOOGLE_CLIENT_ID);
+
+const signSessionToken = (user) =>
+  jwt.sign(
+    {
+      id: user._id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      societyRequestStatus: user.societyRequestStatus,
+    },
+    process.env.JWT_SECRET,
+    { expiresIn: "7d" }
+  );
+
+// =============================
+// 🔐 Google OAuth Sign-in / Sign-up
+// =============================
+router.post("/google", async (req, res) => {
   try {
-    console.info("[POST] /api/users/add - Registering new user");
-
-    const { name, email, password, phone } = req.body;
-    console.debug("[DEBUG] Received user data:", { name, email, phone });
-
-    const existingUser = await User.findOne({ email });
-    if (existingUser) {
-      console.warn(`[WARN] Registration attempt with existing email: ${email}`);
+    const { credential } = req.body;
+    if (!credential) {
+      return res.status(400).json({ error: "Missing Google credential" });
+    }
+    if (!GOOGLE_CLIENT_ID) {
       return res
-        .status(400)
-        .json({ error: "This email already exists in our database" });
+        .status(500)
+        .json({ error: "Google sign-in is not configured on the server" });
     }
 
-    const hashedPassword = await bcrypt.hash(password, 10);
-
-    const newUser = new User({
-      name,
-      email,
-      password: hashedPassword,
-      phone,
-      role: "student",
-      societyRequestStatus: "none",
+    const ticket = await googleClient.verifyIdToken({
+      idToken: credential,
+      audience: GOOGLE_CLIENT_ID,
     });
+    const payload = ticket.getPayload();
+    const email = (payload?.email || "").toLowerCase();
+    const emailVerified = payload?.email_verified;
+    const name = payload?.name || email.split("@")[0];
+    const googleId = payload?.sub;
 
-    await newUser.save();
-    console.info(`[INFO] New user registered: ${email}`);
+    if (!email || !emailVerified) {
+      return res.status(401).json({ error: "Google email not verified" });
+    }
 
-    const token = jwt.sign(
-      {
-        id: newUser._id,
-        name: newUser.name,
-        email: newUser.email,
-        phone: newUser.phone,
-        role: newUser.role,
-        societyRequestStatus: newUser.societyRequestStatus,
-      },
-      JWT_SECRET,
-      { expiresIn: "1h" }
-    );
+    const isWhitelisted = ADMIN_EMAIL_WHITELIST.includes(email);
+    const isKiitEmail = email.endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
+    if (!isKiitEmail && !isWhitelisted) {
+      console.warn(`[WARN] Google sign-in rejected for non-KIIT email: ${email}`);
+      return res.status(403).json({
+        error: `Only @${ALLOWED_EMAIL_DOMAIN} accounts are allowed. Please sign in with your KIIT email.`,
+      });
+    }
 
-    res.status(201).json({
-      message: "User registered successfully",
+    let user = await User.findOne({ email });
+
+    if (!user) {
+      user = await User.create({
+        name,
+        email,
+        googleId,
+        role: isWhitelisted ? "admin" : "student",
+        societyRequestStatus: "none",
+      });
+      console.info(`[INFO] New user via Google: ${email} (role=${user.role})`);
+    } else if (!user.googleId) {
+      // Existing password user signing in with Google for the first time — link the account.
+      user.googleId = googleId;
+      await user.save();
+      console.info(`[INFO] Linked Google account to existing user: ${email}`);
+    }
+
+    const token = signSessionToken(user);
+    return res.status(200).json({
+      message: "Signed in with Google",
       token,
-      role: newUser.role,
-      societyRequestStatus: newUser.societyRequestStatus,
+      role: user.role,
+      societyRequestStatus: user.societyRequestStatus,
+      name: user.name,
     });
   } catch (err) {
-    console.error("[ERROR] Failed to register user:", err.message);
-    res.status(500).json({ error: "Server error while registering user" });
+    console.error("[ERROR] Google sign-in failed:", err.message);
+    return res.status(401).json({ error: "Google sign-in failed" });
   }
 });
 
 // =============================
-// 🔓 Login User
+// 🔓 Legacy Password Login (kept for pre-OAuth users)
 // =============================
 router.post("/login", async (req, res) => {
-  const JWT_SECRET = process.env.JWT_SECRET;
-
   try {
     console.info("[POST] /api/users/login - Login attempt");
 
     const { email, password } = req.body;
-    const user = await User.findOne({ email });
+    const user = await User.findOne({ email: (email || "").toLowerCase() });
 
-    if (!user) {
-      console.warn(`[WARN] Login failed - user not found: ${email}`);
+    if (!user || !user.password) {
+      console.warn(`[WARN] Login failed - user not found or no password: ${email}`);
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
@@ -89,19 +127,7 @@ router.post("/login", async (req, res) => {
       return res.status(400).json({ error: "Invalid credentials" });
     }
 
-    const token = jwt.sign(
-      {
-        id: user._id,
-        name: user.name,
-        email: user.email,
-        phone: user.phone,
-        role: user.role,
-        societyRequestStatus: user.societyRequestStatus,
-      },
-      JWT_SECRET,
-      { expiresIn: "1h" }
-    );
-
+    const token = signSessionToken(user);
     console.info(`[INFO] Login successful for: ${email}`);
 
     res.status(200).json({
@@ -109,6 +135,7 @@ router.post("/login", async (req, res) => {
       token,
       role: user.role,
       societyRequestStatus: user.societyRequestStatus,
+      name: user.name,
     });
   } catch (err) {
     console.error("[ERROR] Login failed:", err.message);
@@ -119,33 +146,6 @@ router.post("/login", async (req, res) => {
 // =============================
 // 👤 Get Current User Info
 // =============================
-// router.get("/me", async (req, res) => {
-//   try {
-//     console.info("[GET] /api/users/me - Fetching current user details");
-
-//     const authHeader = req.headers.authorization;
-//     if (!authHeader) {
-//       console.warn("[WARN] No token provided in /me route");
-//       return res.status(401).json({ error: "No token provided" });
-//     }
-
-//     const token = authHeader.split(" ")[1];
-//     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
-//     const user = await User.findById(decoded.id, { password: 0 });
-//     if (!user) {
-//       console.warn(`[WARN] User not found for ID: ${decoded.id}`);
-//       return res.status(404).json({ error: "User not found" });
-//     }
-
-//     console.info(`[INFO] User details fetched for: ${user.email}`);
-//     res.status(200).json(user);
-//   } catch (err) {
-//     console.error("[ERROR] Failed to fetch user:", err.message);
-//     res.status(500).json({ error: "Server error while fetching user" });
-//   }
-// });
-
 router.get("/me", verifyToken, async (req, res) => {
   try {
     console.info(
@@ -171,11 +171,11 @@ router.put("/update", verifyToken, async (req, res) => {
   try {
     console.info(`[PUT] /api/users/update - Updating user ${req.user.id}`);
 
-    const { name, phone } = req.body;
+    const { name } = req.body;
 
     const updatedUser = await User.findByIdAndUpdate(
       req.user.id,
-      { name, phone },
+      { name },
       { new: true }
     ).select("-password");
 
@@ -194,14 +194,9 @@ router.put("/update", verifyToken, async (req, res) => {
  */
 router.get("/", verifyToken, async (req, res) => {
   try {
-    // Optional: allow only admins
-    // if (req.user.role !== "admin") {
-    //   return res.status(403).json({ message: "Forbidden" });
-    // }
-
     const societies = await Society.find(
-      { requestStatus: "approved" }, // <-- filter here
-      { name: 1 } // return only name + _id
+      { requestStatus: "approved" },
+      { name: 1 }
     )
       .sort({ name: 1 })
       .lean();

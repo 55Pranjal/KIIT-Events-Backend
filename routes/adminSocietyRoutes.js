@@ -15,12 +15,12 @@ const requireAdmin = (req, res, next) => {
 
 /**
  * GET /api/admin/societies
- * Returns all societies (admin only). Populates president (name, email, phone).
+ * Returns all societies (admin only). Populates president (name, email).
  */
 router.get("/societies", verifyToken, requireAdmin, async (req, res) => {
   try {
     const societies = await Society.find({})
-      .populate({ path: "president", select: "name email phone" })
+      .populate({ path: "president", select: "name email" })
       .sort({ createdAt: -1 })
       .lean();
 
