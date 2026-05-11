@@ -172,4 +172,71 @@ router.put("/me", mutationLimiter, verifyToken, async (req, res) => {
   }
 });
 
+// =============================
+// 👤 Get Society Profile by ID (admin or owning society)
+// =============================
+router.get("/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const society = await Society.findById(id).populate(
+      "president",
+      "name email"
+    );
+    if (!society) {
+      return res.status(404).json({ message: "Society not found" });
+    }
+
+    // Admin can view any society. The society's own president can view theirs.
+    // Anyone else is forbidden (we don't want students enumerating societies
+    // through this endpoint — public listings live under /api/users).
+    const isAdmin = req.user.role === "admin";
+    const isOwnPresident =
+      req.user.role === "society" &&
+      society.president &&
+      society.president._id.toString() === req.user.id;
+
+    if (!isAdmin && !isOwnPresident) {
+      return res.status(403).json({ message: "Unauthorized" });
+    }
+
+    res.json(society);
+  } catch (err) {
+    console.error("[ERROR] Failed to fetch society by id:", err.message);
+    res.status(500).json({ message: "Server error while fetching society" });
+  }
+});
+
+// =============================
+// ✏️ Update Society Profile by ID (admin only)
+// =============================
+router.put("/:id", mutationLimiter, verifyToken, async (req, res) => {
+  try {
+    if (req.user.role !== "admin") {
+      return res.status(403).json({ message: "Admin access required" });
+    }
+
+    const allowed = ["name", "description", "email", "phone"];
+    const updates = {};
+    allowed.forEach((field) => {
+      if (req.body[field] !== undefined) updates[field] = req.body[field];
+    });
+
+    const society = await Society.findByIdAndUpdate(req.params.id, updates, {
+      new: true,
+    }).populate("president", "name email");
+
+    if (!society) {
+      return res.status(404).json({ message: "Society not found" });
+    }
+
+    console.info(
+      `[INFO] Society ${society._id} updated by admin ${req.user.id}`
+    );
+    res.json(society);
+  } catch (err) {
+    console.error("[ERROR] Failed to admin-update society:", err.message);
+    res.status(500).json({ message: "Server error while updating society" });
+  }
+});
+
 export default router;

@@ -49,6 +49,32 @@ router.post("/:eventId", mutationLimiter, verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Event not found" });
     }
 
+    // Block registration once the event has started — listings already filter
+    // these out, but a stale link or an outdated client could still POST here.
+    const eventStart = new Date(`${event.date} ${event.time || "00:00"}`);
+    if (!isNaN(eventStart.getTime()) && eventStart.getTime() <= Date.now()) {
+      console.info(
+        `ℹ️ [RegisterRoute] Registration blocked — event ${eventId} already started`
+      );
+      return res
+        .status(400)
+        .json({ message: "Registrations are closed — this event has already started." });
+    }
+
+    // Honour the registration window flag set by the organiser.
+    const status = String(event.registrationStatus || "").toLowerCase();
+    if (status !== "open") {
+      console.info(
+        `ℹ️ [RegisterRoute] Registration blocked — status="${status}" for event ${eventId}`
+      );
+      return res.status(400).json({
+        message:
+          status === "upcoming"
+            ? "Registrations have not opened yet for this event."
+            : "Registrations are closed for this event.",
+      });
+    }
+
     const existing = await Register.findOne({ userId, eventId });
     if (existing) {
       console.info(
