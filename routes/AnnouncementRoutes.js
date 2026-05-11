@@ -177,20 +177,4 @@ router.get("/", async (req, res) => {
   }
 });
 
-// GET: Fetch all announcements
-router.get("/", async (req, res) => {
-  try {
-    console.log("[GET] /api/announcements — Fetching all announcements");
-    const announcements = await Announcement.find()
-      .sort({ createdAt: -1 })
-      .populate("authorId", "name email");
-
-    console.log(`[INFO] Retrieved ${announcements.length} announcements`);
-    res.json(announcements);
-  } catch (err) {
-    console.error("[ERROR] Failed to fetch announcements:", err.message);
-    res.status(500).json({ error: "Server error" });
-  }
-});
-
 export default router;

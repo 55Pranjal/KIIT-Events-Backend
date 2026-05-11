@@ -1,7 +1,9 @@
 import express from "express";
 import Register from "../models/Register.js";
 import Event from "../models/Event.js";
+import Society from "../models/Society.js";
 import verifyToken from "../middleware/auth.js";
+import { mutationLimiter } from "../middleware/rateLimiters.js";
 
 const router = express.Router();
 
@@ -22,7 +24,7 @@ createIndexes();
  * @desc    Register a user for an event
  * @access  Private (Student only)
  */
-router.post("/:eventId", verifyToken, async (req, res) => {
+router.post("/:eventId", mutationLimiter, verifyToken, async (req, res) => {
   try {
     const { eventId } = req.params;
     const {
@@ -124,12 +126,24 @@ router.get("/:eventId/registrations", verifyToken, async (req, res) => {
       return res.status(404).json({ message: "Event not found" });
     }
 
-    if (
-      req.user.role === "society" &&
-      event.societyId?.toString() !== req.user.id
-    ) {
+    if (req.user.role === "society") {
+      const society = await Society.findOne({
+        president: req.user.id,
+        requestStatus: "approved",
+      }).select("_id");
+
+      if (
+        !society ||
+        event.societyId?.toString() !== society._id.toString()
+      ) {
+        console.warn(
+          `⚠️ [RegisterRoute] Unauthorized access attempt by society ${req.user.id} for event ${eventId}`
+        );
+        return res.status(403).json({ message: "Forbidden" });
+      }
+    } else if (req.user.role !== "admin") {
       console.warn(
-        `⚠️ [RegisterRoute] Unauthorized access attempt by society ${req.user.id} for event ${eventId}`
+        `⚠️ [RegisterRoute] Unauthorized access attempt by ${req.user.role} ${req.user.id} for event ${eventId}`
       );
       return res.status(403).json({ message: "Forbidden" });
     }

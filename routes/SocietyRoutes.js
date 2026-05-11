@@ -1,10 +1,10 @@
 import express from "express";
-import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import Society from "../models/Society.js";
 import Event from "../models/Event.js";
 import Register from "../models/Register.js";
 import verifyToken from "../middleware/auth.js";
+import { mutationLimiter } from "../middleware/rateLimiters.js";
 import mongoose from "mongoose";
 
 const router = express.Router();
@@ -12,28 +12,19 @@ const router = express.Router();
 // =============================
 // 📝 Request to Create a Society
 // =============================
-router.post("/request", async (req, res) => {
+router.post("/request", mutationLimiter, verifyToken, async (req, res) => {
   try {
     console.info(
       "[POST] /api/societies/request - New society request received"
     );
 
-    const authHeader = req.headers.authorization;
-    if (!authHeader) {
-      console.warn("[WARN] Missing Authorization header");
-      return res.status(401).json({ error: "No token provided" });
-    }
-
-    const token = authHeader.split(" ")[1];
-    const decoded = jwt.verify(token, process.env.JWT_SECRET);
-
     const { name, description, email, phone } = req.body;
     console.debug("[DEBUG] Society request body:", { name, email, phone });
 
-    const user = await User.findById(decoded.id);
+    const user = await User.findById(req.user.id);
     if (!user) {
       console.warn(
-        `[WARN] Society request by non-existing user: ${decoded.id}`
+        `[WARN] Society request by non-existing user: ${req.user.id}`
       );
       return res.status(404).json({ error: "User not found" });
     }
@@ -73,7 +64,21 @@ router.get("/my-events", verifyToken, async (req, res) => {
     let events = [];
 
     if (req.user.role === "society") {
-      events = await Event.find({ societyId: req.user.id });
+      // Resolve the Society._id this user is president of — events reference
+      // Society._id, not User._id, so we must look it up before querying.
+      const society = await Society.findOne({
+        president: new mongoose.Types.ObjectId(req.user.id),
+        requestStatus: "approved",
+      }).select("_id");
+
+      if (!society) {
+        console.warn(
+          `[WARN] /my-events: no approved society for user ${req.user.id}`
+        );
+        return res.json([]);
+      }
+
+      events = await Event.find({ societyId: society._id });
     } else if (req.user.role === "admin") {
       events = await Event.find();
     } else {
@@ -132,7 +137,7 @@ router.get("/me", verifyToken, async (req, res) => {
 // =============================
 // ✏️ Update Society Profile
 // =============================
-router.put("/me", verifyToken, async (req, res) => {
+router.put("/me", mutationLimiter, verifyToken, async (req, res) => {
   try {
     console.info(
       `[PUT] /api/societies/me - Updating profile for user ${req.user.id}`
