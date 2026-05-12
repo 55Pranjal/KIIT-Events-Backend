@@ -3,6 +3,8 @@ import Society from "../models/Society.js";
 import User from "../models/User.js";
 import Notification from "../models/Notification.js";
 import verifyToken from "../middleware/auth.js";
+import { validate } from "../middleware/validate.js";
+import { societyDecisionSchema } from "../schemas/index.js";
 // import { sendEmail } from "../utils/sendEmail.js";
 
 const router = express.Router();
@@ -41,18 +43,16 @@ router.get("/society-requests", verifyAdmin, async (req, res) => {
 });
 
 // ✅ POST: Approve or reject a society request
-router.post("/society-requests/:id/decision", verifyAdmin, async (req, res) => {
+router.post(
+  "/society-requests/:id/decision",
+  verifyAdmin,
+  validate(societyDecisionSchema),
+  async (req, res) => {
   try {
     const { decision } = req.body;
     console.log(
       `[POST] /api/admin/society-requests/${req.params.id}/decision — Decision: ${decision}`
     );
-
-    if (decision !== "approved" && decision !== "rejected") {
-      return res
-        .status(400)
-        .json({ error: "decision must be 'approved' or 'rejected'" });
-    }
 
     const society = await Society.findById(req.params.id).populate("president");
     if (!society) {

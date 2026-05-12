@@ -2,6 +2,8 @@ import express from "express";
 import Query from "../models/queryModel.js";
 import verifyToken from "../middleware/auth.js";
 import { mutationLimiter } from "../middleware/rateLimiters.js";
+import { validate } from "../middleware/validate.js";
+import { createQuerySchema, replyToQuerySchema } from "../schemas/index.js";
 
 const router = express.Router();
 
@@ -10,17 +12,15 @@ const router = express.Router();
  * @desc    Submit a new query
  * @access  Private
  */
-router.post("/", mutationLimiter, verifyToken, async (req, res) => {
+router.post(
+  "/",
+  mutationLimiter,
+  verifyToken,
+  validate(createQuerySchema),
+  async (req, res) => {
   try {
     const { message } = req.body;
     const { id: userId, name, email } = req.user;
-
-    if (!message?.trim()) {
-      console.warn("⚠️ [QueryRoute] Empty message received from user:", userId);
-      return res
-        .status(400)
-        .json({ success: false, message: "Message cannot be empty" });
-    }
 
     const query = new Query({
       name,
@@ -93,7 +93,12 @@ router.get("/", verifyToken, async (req, res) => {
  * @desc    Add or update a reply to a query
  * @access  Private (Admin)
  */
-router.put("/:id", mutationLimiter, verifyToken, async (req, res) => {
+router.put(
+  "/:id",
+  mutationLimiter,
+  verifyToken,
+  validate(replyToQuerySchema),
+  async (req, res) => {
   try {
     const { id: userId, role } = req.user;
     const queryId = req.params.id;

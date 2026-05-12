@@ -5,11 +5,18 @@ import User from "../models/User.js";
 import Society from "../models/Society.js"; // <--- new import (adjust path if needed)
 import Notification from "../models/Notification.js";
 import { mutationLimiter } from "../middleware/rateLimiters.js";
+import { validate } from "../middleware/validate.js";
+import { createAnnouncementSchema } from "../schemas/index.js";
 
 const router = express.Router();
 
 // POST: Create an announcement (admin or approved society)
-router.post("/", mutationLimiter, verifyToken, async (req, res) => {
+router.post(
+  "/",
+  mutationLimiter,
+  verifyToken,
+  validate(createAnnouncementSchema),
+  async (req, res) => {
   try {
     if (req.user.role !== "admin" && req.user.role !== "society") {
       return res
@@ -17,13 +24,8 @@ router.post("/", mutationLimiter, verifyToken, async (req, res) => {
         .json({ message: "Only admins and approved societies can post announcements" });
     }
 
-    const title = (req.body.title || "").trim();
-    const message = (req.body.message || "").trim();
-    if (!title || !message) {
-      return res
-        .status(400)
-        .json({ message: "title and message are required" });
-    }
+    // zod has already trimmed and validated; safe to read directly.
+    const { title, message } = req.body;
 
     // Resolve which Society this post is attributed to.
     // - society users: their own approved Society (ignore client societyId)
