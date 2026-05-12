@@ -27,10 +27,32 @@ const EVENT_TZ_OFFSET = "+05:30"; // KIIT campus is in Bhubaneswar, IST.
  */
 export function getEventStart(date, time) {
   if (!date) return null;
-  const dateMatch = String(date).match(/^(\d{4}-\d{2}-\d{2})/);
+
+  // Accept both strict ISO ("2026-06-20") and the lenient form some legacy
+  // / hand-edited records use ("2026-6-20"). The ISO date string the Date
+  // constructor accepts requires leading zeros, so we normalise here.
+  const dateMatch = String(date).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/);
   if (!dateMatch) return null;
-  const t = time && /^\d{1,2}:\d{2}/.test(String(time)) ? String(time) : "00:00";
-  const d = new Date(`${dateMatch[1]}T${t}${EVENT_TZ_OFFSET}`);
+  const yyyy = dateMatch[1];
+  const mo = dateMatch[2].padStart(2, "0");
+  const dd = dateMatch[3].padStart(2, "0");
+
+  // Pull just HH:MM from whatever `time` is. Older records may have stored
+  // "18:00:00.000Z" or "6:00 PM"; concatenating those raw with "+05:30"
+  // produces an invalid ISO string. Defaults to midnight if no HH:MM found.
+  let hh = 0;
+  let mm = 0;
+  if (time) {
+    const tm = String(time).match(/(\d{1,2}):(\d{2})/);
+    if (tm) {
+      hh = Math.min(parseInt(tm[1], 10), 23);
+      mm = Math.min(parseInt(tm[2], 10), 59);
+    }
+  }
+  const hhStr = String(hh).padStart(2, "0");
+  const mmStr = String(mm).padStart(2, "0");
+
+  const d = new Date(`${yyyy}-${mo}-${dd}T${hhStr}:${mmStr}${EVENT_TZ_OFFSET}`);
   return isNaN(d.getTime()) ? null : d;
 }
 
