@@ -7,6 +7,7 @@ import Register from "../models/Register.js";
 import Highlight from "../models/Highlight.js";
 import { validate } from "../middleware/validate.js";
 import { createEventSchema, updateEventSchema } from "../schemas/index.js";
+import { getEventStart } from "../utils/eventDate.js";
 
 const router = express.Router();
 
@@ -32,8 +33,8 @@ const resolveOwnedSocietyId = async (userId) => {
 const validateEventDateTime = (date, time) => {
   if (!date) return { ok: false, message: "date is required" };
 
-  const start = new Date(`${date}T${time || "00:00"}`);
-  if (isNaN(start.getTime())) {
+  const start = getEventStart(date, time);
+  if (!start) {
     return { ok: false, message: "Invalid date/time format" };
   }
 
@@ -162,14 +163,15 @@ router.get("/", async (req, res) => {
 
     // Filter based on real date + time
     const filteredEvents = events.filter((event) => {
-      const eventDateTime = new Date(`${event.date} ${event.time}`);
+      const eventDateTime = getEventStart(event.date, event.time);
+      if (!eventDateTime) return false;
       return eventDateTime > now;
     });
 
     // Sort the events by date+time
     filteredEvents.sort((a, b) => {
-      const aDateTime = new Date(`${a.date} ${a.time}`);
-      const bDateTime = new Date(`${b.date} ${b.time}`);
+      const aDateTime = getEventStart(a.date, a.time);
+      const bDateTime = getEventStart(b.date, b.time);
       return aDateTime - bDateTime;
     });
 
@@ -209,14 +211,15 @@ router.get("/upcoming", async (req, res) => {
 
     // Filter events based on actual date + time
     const upcomingEvents = events.filter((event) => {
-      const eventDateTime = new Date(`${event.date} ${event.time}`);
+      const eventDateTime = getEventStart(event.date, event.time);
+      if (!eventDateTime) return false;
       return eventDateTime > now;
     });
 
     // Sort after filtering
     upcomingEvents.sort((a, b) => {
-      const aDate = new Date(`${a.date} ${a.time}`);
-      const bDate = new Date(`${b.date} ${b.time}`);
+      const aDate = getEventStart(a.date, a.time);
+      const bDate = getEventStart(b.date, b.time);
       return aDate - bDate;
     });
 
@@ -240,14 +243,15 @@ router.get("/past", async (req, res) => {
 
     // Filter past events
     const pastEvents = events.filter((event) => {
-      const eventDateTime = new Date(`${event.date} ${event.time}`);
+      const eventDateTime = getEventStart(event.date, event.time);
+      if (!eventDateTime) return false;
       return eventDateTime < now;
     });
 
     // Sort descending (most recent past event first)
     pastEvents.sort((a, b) => {
-      const aDateTime = new Date(`${a.date} ${a.time}`);
-      const bDateTime = new Date(`${b.date} ${b.time}`);
+      const aDateTime = getEventStart(a.date, a.time);
+      const bDateTime = getEventStart(b.date, b.time);
       return bDateTime - aDateTime;
     });
 
