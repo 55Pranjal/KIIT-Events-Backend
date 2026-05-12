@@ -121,6 +121,11 @@ app.use("/api/adminSociety", adminSocietyRoutes);
 app.use("/api", HighlightRoutes);
 
 // ====== Database Connection ======
+// strictQuery rejects unknown fields in query filters (Mongoose 7+ defaults
+// to false, which silently accepts them — a footgun if a typo or untrusted
+// input lands in a .find({})).
+mongoose.set("strictQuery", true);
+
 mongoose
   .connect(MONGO_URI)
   .then(() => console.info("[INFO] ✅ MongoDB connected successfully"))
