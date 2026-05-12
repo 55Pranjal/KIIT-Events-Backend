@@ -20,6 +20,10 @@ const eventSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Society dashboard (`/my-events`), ownership checks for edit/delete, and
+// the registrations view all filter by societyId.
+eventSchema.index({ societyId: 1 });
+
 const Event = mongoose.model("Event", eventSchema);
 
 export default Event;
