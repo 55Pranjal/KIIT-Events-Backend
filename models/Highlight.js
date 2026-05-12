@@ -40,4 +40,7 @@ const HighlightSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
+// Highlights are always fetched by `{ eventId, status: "published" }`.
+HighlightSchema.index({ eventId: 1, status: 1 });
+
 export default mongoose.model("Highlight", HighlightSchema);

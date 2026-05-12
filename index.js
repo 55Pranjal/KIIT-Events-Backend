@@ -4,7 +4,6 @@ dotenv.config();
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
-import jwt from "jsonwebtoken";
 import mongoose from "mongoose";
 
 import userRoutes from "./routes/UserRoutes.js";
@@ -107,19 +106,6 @@ app.get("/", (req, res) => {
 
 app.get("/api/health", (req, res) => {
   res.status(200).json({ status: "ok" });
-});
-
-app.get("/api/protected", (req, res) => {
-  const authHeader = req.headers.authorization;
-  if (!authHeader) return res.status(401).json({ msg: "No token provided" });
-
-  const token = authHeader.split(" ")[1];
-  try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    res.json({ msg: "Protected data", user: decoded });
-  } catch {
-    res.status(401).json({ msg: "Invalid or expired token" });
-  }
 });
 
 app.use("/api/users", userRoutes);
