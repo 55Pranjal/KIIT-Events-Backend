@@ -6,13 +6,23 @@ import Register from "../models/Register.js";
 import verifyToken from "../middleware/auth.js";
 import { mutationLimiter } from "../middleware/rateLimiters.js";
 import mongoose from "mongoose";
+import { validate } from "../middleware/validate.js";
+import {
+  createSocietyRequestSchema,
+  updateSocietySchema,
+} from "../schemas/index.js";
 
 const router = express.Router();
 
 // =============================
 // 📝 Request to Create a Society
 // =============================
-router.post("/request", mutationLimiter, verifyToken, async (req, res) => {
+router.post(
+  "/request",
+  mutationLimiter,
+  verifyToken,
+  validate(createSocietyRequestSchema),
+  async (req, res) => {
   try {
     console.info(
       "[POST] /api/societies/request - New society request received"
@@ -137,7 +147,12 @@ router.get("/me", verifyToken, async (req, res) => {
 // =============================
 // ✏️ Update Society Profile
 // =============================
-router.put("/me", mutationLimiter, verifyToken, async (req, res) => {
+router.put(
+  "/me",
+  mutationLimiter,
+  verifyToken,
+  validate(updateSocietySchema),
+  async (req, res) => {
   try {
     console.info(
       `[PUT] /api/societies/me - Updating profile for user ${req.user.id}`
@@ -209,19 +224,19 @@ router.get("/:id", verifyToken, async (req, res) => {
 // =============================
 // ✏️ Update Society Profile by ID (admin only)
 // =============================
-router.put("/:id", mutationLimiter, verifyToken, async (req, res) => {
+router.put(
+  "/:id",
+  mutationLimiter,
+  verifyToken,
+  validate(updateSocietySchema),
+  async (req, res) => {
   try {
     if (req.user.role !== "admin") {
       return res.status(403).json({ message: "Admin access required" });
     }
 
-    const allowed = ["name", "description", "email", "phone"];
-    const updates = {};
-    allowed.forEach((field) => {
-      if (req.body[field] !== undefined) updates[field] = req.body[field];
-    });
-
-    const society = await Society.findByIdAndUpdate(req.params.id, updates, {
+    // zod has already stripped unknown keys, so req.body is safe to spread.
+    const society = await Society.findByIdAndUpdate(req.params.id, req.body, {
       new: true,
     }).populate("president", "name email");
 

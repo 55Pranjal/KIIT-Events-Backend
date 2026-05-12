@@ -5,6 +5,8 @@ import Notification from "../models/Notification.js";
 import Society from "../models/Society.js";
 import Register from "../models/Register.js";
 import Highlight from "../models/Highlight.js";
+import { validate } from "../middleware/validate.js";
+import { createEventSchema, updateEventSchema } from "../schemas/index.js";
 
 const router = express.Router();
 
@@ -51,7 +53,7 @@ const validateEventDateTime = (date, time) => {
   return { ok: true };
 };
 
-router.post("/add", verifyToken, async (req, res) => {
+router.post("/add", verifyToken, validate(createEventSchema), async (req, res) => {
   try {
     console.info("[EventRoute] Received create request from", req.user.id, "role:", req.user.role);
 
@@ -98,13 +100,6 @@ router.post("/add", verifyToken, async (req, res) => {
           .status(400)
           .json({ message: "societyId is required" });
       }
-    }
-
-    // Basic validation
-    if (!title || !date) {
-      return res
-        .status(400)
-        .json({ message: "title and date are required" });
     }
 
     const dateCheck = validateEventDateTime(date, time);
@@ -361,7 +356,7 @@ router.delete("/:id", verifyToken, async (req, res) => {
  * @desc    Update an event
  * @access  Private (Admin or owning society)
  */
-router.put("/:eventId", verifyToken, async (req, res) => {
+router.put("/:eventId", verifyToken, validate(updateEventSchema), async (req, res) => {
   try {
     const { eventId } = req.params;
     const updates = req.body;

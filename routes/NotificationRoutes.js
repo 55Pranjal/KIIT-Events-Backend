@@ -74,6 +74,31 @@ router.patch("/:id/read", verifyToken, async (req, res) => {
 });
 
 /**
+ * @route   PATCH /read-all
+ * @desc    Mark every unread notification as read for the logged-in user
+ * @access  Private
+ */
+router.patch("/read-all", verifyToken, async (req, res) => {
+  try {
+    const result = await Notification.updateMany(
+      { userId: req.user.id, isRead: false },
+      { $set: { isRead: true } }
+    );
+
+    console.log(
+      `📬 [NotificationRoute] Marked ${result.modifiedCount} notifications as read for user ${req.user.id}`
+    );
+    res.json({ message: "All notifications marked as read", modifiedCount: result.modifiedCount });
+  } catch (err) {
+    console.error(
+      "❌ [NotificationRoute] Error marking all as read:",
+      err.message
+    );
+    res.status(500).json({ message: "Server error" });
+  }
+});
+
+/**
  * @route   DELETE /delete-read
  * @desc    Delete all read notifications for the user
  * @access  Private
@@ -95,6 +120,41 @@ router.delete("/delete-read", verifyToken, async (req, res) => {
       err.message
     );
     res.status(500).json({ error: "Server error" });
+  }
+});
+
+/**
+ * @route   DELETE /:id
+ * @desc    Delete a single notification belonging to the logged-in user
+ * @access  Private
+ *
+ * NOTE: This route is registered AFTER /delete-read so the static path takes
+ * precedence — otherwise "/delete-read" would be parsed as :id="delete-read".
+ */
+router.delete("/:id", verifyToken, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const result = await Notification.findOneAndDelete({
+      _id: id,
+      userId: req.user.id,
+    });
+
+    if (!result) {
+      // 404 covers both "doesn't exist" and "belongs to someone else" — don't
+      // leak which one it is.
+      return res.status(404).json({ message: "Notification not found" });
+    }
+
+    console.log(
+      `🗑️ [NotificationRoute] Deleted notification ${id} for user ${req.user.id}`
+    );
+    res.json({ message: "Notification deleted" });
+  } catch (err) {
+    console.error(
+      `❌ [NotificationRoute] Error deleting notification ${req.params.id}:`,
+      err.message
+    );
+    res.status(500).json({ message: "Server error" });
   }
 });
 

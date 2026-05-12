@@ -10,6 +10,8 @@ import {
   mutationLimiter,
 } from "../middleware/rateLimiters.js";
 import Society from "../models/Society.js";
+import { validate } from "../middleware/validate.js";
+import { updateUserSchema } from "../schemas/index.js";
 
 const router = express.Router();
 
@@ -172,7 +174,12 @@ router.get("/me", verifyToken, async (req, res) => {
 // =============================
 // ✏️ Update User Info
 // =============================
-router.put("/update", mutationLimiter, verifyToken, async (req, res) => {
+router.put(
+  "/update",
+  mutationLimiter,
+  verifyToken,
+  validate(updateUserSchema),
+  async (req, res) => {
   try {
     console.info(`[PUT] /api/users/update - Updating user ${req.user.id}`);
 
