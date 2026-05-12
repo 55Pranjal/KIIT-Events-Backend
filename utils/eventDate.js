@@ -18,12 +18,19 @@ const EVENT_TZ_OFFSET = "+05:30"; // KIIT campus is in Bhubaneswar, IST.
  * Build a Date representing the start of an event from its stored date/time
  * strings, interpreting them as IST wall-clock time.
  *
- * Returns null if `date` is missing or malformed.
+ * `event.date` may be stored as either:
+ *   - "YYYY-MM-DD" (what <input type="date"> submits — current code path), or
+ *   - a full ISO string like "2026-03-05T00:00:00.000Z" (older records that
+ *     went through a different code path)
+ * In both cases we want just the calendar date portion, then we layer the
+ * venue-local time and IST offset on top. Returns null on malformed input.
  */
 export function getEventStart(date, time) {
   if (!date) return null;
+  const dateMatch = String(date).match(/^(\d{4}-\d{2}-\d{2})/);
+  if (!dateMatch) return null;
   const t = time && /^\d{1,2}:\d{2}/.test(String(time)) ? String(time) : "00:00";
-  const d = new Date(`${date}T${t}${EVENT_TZ_OFFSET}`);
+  const d = new Date(`${dateMatch[1]}T${t}${EVENT_TZ_OFFSET}`);
   return isNaN(d.getTime()) ? null : d;
 }
 
