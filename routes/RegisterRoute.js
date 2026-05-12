@@ -4,6 +4,7 @@ import Event from "../models/Event.js";
 import Society from "../models/Society.js";
 import verifyToken from "../middleware/auth.js";
 import { mutationLimiter } from "../middleware/rateLimiters.js";
+import { getEventStart } from "../utils/eventDate.js";
 
 const router = express.Router();
 
@@ -51,8 +52,8 @@ router.post("/:eventId", mutationLimiter, verifyToken, async (req, res) => {
 
     // Block registration once the event has started — listings already filter
     // these out, but a stale link or an outdated client could still POST here.
-    const eventStart = new Date(`${event.date} ${event.time || "00:00"}`);
-    if (!isNaN(eventStart.getTime()) && eventStart.getTime() <= Date.now()) {
+    const eventStart = getEventStart(event.date, event.time);
+    if (eventStart && eventStart.getTime() <= Date.now()) {
       console.info(
         `ℹ️ [RegisterRoute] Registration blocked — event ${eventId} already started`
       );
